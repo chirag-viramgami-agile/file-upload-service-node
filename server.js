@@ -245,38 +245,44 @@ app.post("/upload/complete", async (req, res) => {
    const finalPath = path.join(UPLOAD_DIR, uploadId + "-" + upload.filename);
    const final = fs.createWriteStream(finalPath)
 
-   for (let i = 0; i < upload.totalChunks; i++) {
-      const chunkPath = path.join(chunkDir, i + ".chunk")
-      if (!fs.existsSync(chunkPath)) {
-         return res.status(500).json({
-            error: `missing chunk ${i}`
+   if(upload.status !== 'complete') {
+      for (let i = 0; i < upload.totalChunks; i++) {
+         const chunkPath = path.join(chunkDir, i + ".chunk")
+         if (!fs.existsSync(chunkPath)) {
+            return res.status(500).json({
+               error: `missing chunk ${i}`
+            });
+         }
+
+         await new Promise((resolve, reject) => {
+            const stream = fs.createReadStream(chunkPath);
+
+            stream.pipe(final, { end: false });
+
+            stream.on("end", resolve);
+            stream.on("error", reject);
          });
       }
-
-      await new Promise((resolve, reject) => {
-         const stream = fs.createReadStream(chunkPath);
-
-         stream.pipe(final, { end: false });
-
-         stream.on("end", resolve);
-         stream.on("error", reject);
-      });
+      final.end();
+      fs.rmSync(uploadFolder, { recursive: true, force: true })
+      // MERGE END
+      
+      upload.status = "complete";
+      upload.filepath = finalPath;
+      await upload.save();
    }
-   final.end();
-   fs.rmSync(uploadFolder, { recursive: true, force: true })
-   // MERGE END
-   
-   upload.status = "complete";
-   upload.filepath = finalPath;
-   await upload.save();
-   
+
    if (upload.uploadedChunks.length !== upload.totalChunks) {
-      return res.status(400).json({ error: "upload incomplete" });
+      return res.status(400).json({
+         success: false,
+         message: "upload incomplete"
+      });
    }
    
    res.json({
       fileId: path.basename(upload.filepath),
       success: true,
+      message: "upload complete"
    });
 });
 

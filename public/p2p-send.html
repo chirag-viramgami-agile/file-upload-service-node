@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>P2P File Sender</title>
+
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .qr-wrapper {
+            margin-top: 30px;
+            display: flex;
+            justify-content: center;
+        }
+
+        #qr {
+            width: 200px !important;
+            height: 200px !important;
+        }
+    </style>
+
+</head>
+
+<body>
+
+    <div class="container">
+
+        <h2>Direct File Sender (P2P)</h2>
+        <form onsubmit="(e)=>e.preventDefault();return false;">
+            <div id="formInput">
+                <div class="file-input">
+                    <input type="file" id="file">
+                </div>
+
+                <div id="dropzone">
+                    Drag & Drop File Here
+                </div>
+
+                <button onclick="start()">Start Sharing</button>
+            </div>
+            <br>
+            <button type="reset" class="secondary" id="resetForm">Reset</button>
+        </form>
+
+        <div class="status" id="status">Waiting For File...</div>
+
+        <div id="sharableLink">
+            <div class="section">
+                <div class="label">Magnet Link</div>
+                <div class="link" id="magnet">N/A</div>
+            </div>
+
+            <div class="section">
+                <div class="label">Share Link</div>
+
+                <div class="link">
+                    <a href="javascript:void(0)" target="_blank" id="shareLink" rel="noopener noreferrer">
+                        N/A
+                    </a>
+                </div>
+            </div>
+
+            <div class="qr-wrapper">
+                <canvas id="qr"></canvas>
+            </div>
+        </div>
+
+        
+        <div class="toast" id="toast"></div>
+    </div>
+
+
+    <script src="app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.js"></script>
+
+    <script>
+
+        const client = new WebTorrent()
+
+        const drop = document.getElementById("dropzone")
+
+        let selectedFile = null
+
+
+        drop.addEventListener("dragover", e => {
+            e.preventDefault()
+            drop.classList.add("active")
+        })
+
+        drop.addEventListener("dragleave", () => {
+            drop.classList.remove("active")
+        })
+
+        drop.addEventListener("drop", e => {
+
+            e.preventDefault()
+            drop.classList.remove("active")
+
+            selectedFile = e.dataTransfer.files[0]
+
+            document.getElementById("status").innerText =
+                "Selected: " + selectedFile.name
+
+        })
+
+
+        document.getElementById("magnet").addEventListener("click", e => {
+            const magnet = document.getElementById("magnet").textContent
+            navigator.clipboard.writeText(magnet)
+            toast("Magnet copied")
+        })
+
+        // The listener for when a file is picked
+        document.getElementById("file").addEventListener("change", e => {
+            selectedFile = e.target.files[0];
+            if (selectedFile) {
+                document.getElementById("status").innerText = "Selected: " + selectedFile.name;
+            }
+        });
+
+        // The fix for the Reset button
+        document.getElementById("resetForm").addEventListener("click", () => {
+            selectedFile = null; // Clear the variable
+            document.getElementById("status").innerText = "Waiting For File...";
+            // Note: type="reset" on the button handles clearing the actual input field!
+        });
+
+        function start() {
+            if (!selectedFile) {
+                toast("Select a file")
+                return
+            }
+
+            document.getElementById("status").innerText =
+                "Creating torrent..."
+
+            client.seed(selectedFile, torrent => {
+
+                showMagnet(torrent)
+                document.getElementById('formInput').style.display = 'none'
+            })
+
+        }
+
+
+        function showMagnet(torrent) {
+
+            const magnet = torrent.magnetURI
+
+            document.getElementById("magnet").textContent = magnet
+
+            const shareLink =
+                location.origin +
+                "/p2p-receive.html#" +
+                encodeURIComponent(magnet)
+
+            document.getElementById("shareLink").href = shareLink
+            document.getElementById("shareLink").textContent = shareLink
+
+
+            QRCode.toCanvas(
+                document.getElementById("qr"),
+                shareLink
+            )
+
+            document.getElementById("status").innerText =
+                "Seeding to peers..."
+
+            setInterval(() => {
+
+                const speed =
+                    (torrent.uploadSpeed / 1024 / 1024).toFixed(2)
+
+                const peers = torrent.numPeers
+
+                document.getElementById("status").innerText =
+                    "Seeding | Peers: " + peers +
+                    " | Upload: " + speed + " MB/s"
+
+            }, 1000)
+
+        }
+
+    </script>
+
+</body>
+
+</html>
