@@ -124,8 +124,8 @@
         // The fix for the Reset button
         document.getElementById("resetForm").addEventListener("click", () => {
             selectedFile = null; // Clear the variable
+            document.getElementById("formInput").style.display= "block";
             document.getElementById("status").innerText = "Waiting For File...";
-            // Note: type="reset" on the button handles clearing the actual input field!
         });
 
         function start() {
