@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+
+    <title>P2P File Receiver</title>
+    <link rel="stylesheet" href="style.css">
+
+</head>
+
+
+<body>
+
+    <div class="container">
+
+        <h2>Direct File Receiver (P2P)</h2>
+
+        <div class="input-group button-row">
+            <input id="magnet" placeholder="Paste share link or magnet link">
+            <button onclick="download()">Download</button>
+        </div>
+
+        <div class="status" id="status">
+            Waiting for magnet link
+        </div>
+
+        <div class="progress">
+            <div class="bar" id="bar"></div>
+        </div>
+
+        <div class="stats">
+            <div id="peers">Peers: 0</div>
+            <div id="speed">0 MB/s</div>
+        </div>
+
+        <div class="files" id="files"></div>
+
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+
+    <script src="app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.js"></script>
+
+    <script>
+        const client = new WebTorrent()
+
+        /* -------------------
+        AUTO START
+        ------------------- */
+
+        const hash = location.hash.slice(1)
+
+        if (hash) {
+            const magnet = decodeURIComponent(hash)
+            document.getElementById("magnet").value = magnet
+            download()
+        }
+
+        /* -------------------
+        DOWNLOAD
+        ------------------- */
+
+        function download() {
+            let magnet = document.getElementById("magnet").value
+
+            if (!magnet) {
+                toast("Paste magnet link")
+                return
+            }
+
+            document.getElementById("status").innerText = "Connecting to peers..."
+
+            client.add(magnet, torrent => {
+
+                document.getElementById("status").innerText = "Downloading..."
+
+                toast("Connected to swarm")
+
+                updateStats(torrent)
+
+                torrent.files.forEach(file => {
+                    createFileCard(file)
+                })
+
+            })
+
+        }
+
+        /* -------------------
+        STATS
+        ------------------- */
+
+        function updateStats(torrent) {
+            setInterval(() => {
+
+                const percent = (torrent.progress * 100).toFixed(2)
+
+                const speed = (torrent.downloadSpeed / 1024 / 1024).toFixed(2)
+
+                const peers = torrent.numPeers
+
+                document.getElementById("bar").style.width = percent + "%"
+
+                document.getElementById("status").innerText = percent + "% Downloaded"
+
+                document.getElementById("peers").innerText = "Peers: " + peers
+
+                document.getElementById("speed").innerText = speed + " MB/s"
+
+            }, 1000)
+        }
+
+
+        /* -------------------
+        FILE CARD
+        ------------------- */
+
+        function createFileCard(file) {
+            const container = document.createElement("div")
+            container.className = "file-card"
+            container.innerHTML = "<p>" + file.name + "</p>"
+
+            document.getElementById("files").appendChild(container)
+            file.appendTo(container)
+
+            const btn = document.createElement("button")
+
+            btn.innerText = "Download"
+
+            btn.onclick = () => {
+                file.getBlobURL((err, url) => {
+                    const a = document.createElement("a")
+                    a.href = url
+                    a.download = file.name
+                    a.click()
+                })
+            }
+
+            container.appendChild(btn)
+        }
+
+    </script>
+
+</body>
+
+</html>

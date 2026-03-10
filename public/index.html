@@ -1,152 +1,122 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 
 <head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+
     <title>Advanced Upload</title>
 
-    <style>
-        body {
-            font-family: Arial;
-            background: #0f172a;
-            color: white;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
+    <link rel="stylesheet" href="style.css">
 
-        .container {
-            width: 450px;
-            background: #1e293b;
-            padding: 30px;
-            border-radius: 12px;
-        }
-
-        .drop {
-            border: 2px dashed #64748b;
-            padding: 40px;
-            text-align: center;
-            margin-bottom: 20px;
-        }
-
-        .progress {
-            height: 10px;
-            background: #334155;
-            border-radius: 6px;
-            overflow: hidden;
-            margin-top: 10px;
-        }
-
-        .bar {
-            height: 100%;
-            width: 0%;
-            background: #22c55e;
-        }
-
-        button {
-            width: 100%;
-            padding: 10px;
-            margin-top: 10px;
-        }
-    </style>
 </head>
+
 
 <body>
 
     <div class="container">
-        <form id="uploadForm" onsubmit="(e)=>e.preventDefault();return false;">
-            <h2>Upload File</h2>
+
+        <h1>Advanced File Upload</h1>
+        <div class="divider"></div>
+        <h2>Fast Transfer (P2P)</h2>
+        <div class="button-row">
+            <a href="/p2p-send.html"><button class="secondary">Send File</button></a>
+            <a href="/p2p-receive.html"><button class="secondary">Receive File</button></a>
+        </div>
+
+        <div class="divider"></div>
+
+
+        <form id="uploadForm">
+
+            <h2 style="margin-bottom:15px;">Upload File</h2>
 
             <div class="drop" id="drop">
-                Drag & Drop File
+                Drag & Drop File Here
             </div>
 
             <input type="file" id="file">
 
-            <button onclick="startUpload()">Start Upload</button>
-            <button onclick="pauseUpload()">Pause</button>
-            <button onclick="resumeUpload()">Resume</button>
+            <div class="button-row">
+
+                <button type="button" onclick="startUpload()">Start Upload</button>
+
+                <button type="button" class="secondary" onclick="pauseUpload()">Pause</button>
+
+                <button type="button" class="secondary" onclick="resumeUpload()">Resume</button>
+
+            </div>
+
         </form>
 
         <div class="progress">
             <div class="bar" id="bar"></div>
         </div>
 
-        <div id="status"></div>
-        <div id="link"></div>
+        <div class="status" id="status">Waiting for file</div>
+
+        <div class="link-card" id="link"></div>
 
     </div>
 
     <script>
+        const PARALLEL = Math.min(navigator.hardwareConcurrency || 4, 6);
 
-        const PARALLEL = Math.min(navigator.hardwareConcurrency || 4, 6)
+        let file;
+        let uploadId = localStorage.getItem("uploadToken");
 
-        let file
-        let uploadId = localStorage.getItem("uploadToken")
+        let paused = false;
 
-        let paused = false
-
-        let nextChunk = 0
-        let totalChunks = 0
-        let completedChunks = 0
-        let CHUNK_SIZE = 8 * 1024 * 1024
-
+        let nextChunk = 0;
+        let totalChunks = 0;
+        let completedChunks = 0;
+        let CHUNK_SIZE = 8 * 1024 * 1024;
 
         /* ---------------- HASH WORKER POOL ---------------- */
 
-        const HASH_WORKERS = 4
-        const workerPool = []
-        const workerQueue = []
+        const HASH_WORKERS = 4;
+        const workerPool = [];
+        const workerQueue = [];
 
         for (let i = 0; i < HASH_WORKERS; i++) {
-            const w = new Worker("hashWorker.js")
-            w.busy = false
-            workerPool.push(w)
+            const w = new Worker("hashWorker.js");
+            w.busy = false;
+            workerPool.push(w);
         }
 
         function hashChunk(chunk) {
-
-            return new Promise(resolve => {
-
-                workerQueue.push({ chunk, resolve })
-                runHashQueue()
-
-            })
-
+            return new Promise((resolve) => {
+                workerQueue.push({ chunk, resolve });
+                runHashQueue();
+            });
         }
 
         function runHashQueue() {
-
             for (const worker of workerPool) {
+                if (worker.busy) continue;
+                if (workerQueue.length === 0) return;
 
-                if (worker.busy) continue
-                if (workerQueue.length === 0) return
+                const job = workerQueue.shift();
 
-                const job = workerQueue.shift()
+                worker.busy = true;
 
-                worker.busy = true
+                worker.onmessage = (e) => {
+                    worker.busy = false;
+                    job.resolve(e.data.hash);
+                    runHashQueue();
+                };
 
-                worker.onmessage = e => {
-                    worker.busy = false
-                    job.resolve(e.data.hash)
-                    runHashQueue()
-                }
-
-                worker.postMessage({ chunk: job.chunk })
-
+                worker.postMessage({ chunk: job.chunk });
             }
-
         }
-
 
         /* ---------------- START ---------------- */
 
         async function startUpload() {
+            file = document.getElementById("file").files[0];
 
-            file = document.getElementById("file").files[0]
-
-            if (!file) return alert("select file")
+            if (!file) return alert("select file");
 
             const init = await fetch("/upload/init", {
                 method: "POST",
@@ -154,204 +124,185 @@
                 body: JSON.stringify({
                     filename: file.name,
                     size: file.size,
-                    token: uploadId
-                })
-            })
+                    token: uploadId,
+                }),
+            });
 
-            const data = await init.json()
+            const data = await init.json();
 
-            uploadId = data.uploadId
-            CHUNK_SIZE = data.chunkSize
+            uploadId = data.uploadId;
+            CHUNK_SIZE = data.chunkSize;
 
-            localStorage.setItem("uploadToken", uploadId)
+            localStorage.setItem("uploadToken", uploadId);
 
-            const status = await fetch(`/upload/status?uploadId=${uploadId}`)
-            const s = await status.json()
+            const status = await fetch(`/upload/status?uploadId=${uploadId}`);
+            const s = await status.json();
 
-            totalChunks = s.totalChunks
+            totalChunks = s.totalChunks;
 
-            const uploadedSet = new Set(s.uploadedChunks)
+            const uploadedSet = new Set(s.uploadedChunks);
 
-            nextChunk = 0
+            nextChunk = 0;
 
             while (uploadedSet.has(nextChunk)) {
-                nextChunk++
+                nextChunk++;
             }
 
-            completedChunks = s.uploadedChunks.length
+            completedChunks = s.uploadedChunks.length;
 
-            startWorkers()
-
+            startWorkers();
         }
-
 
         /* ---------------- WORKERS ---------------- */
 
         async function startWorkers() {
-
-            let workers = []
+            let workers = [];
 
             for (let i = 0; i < PARALLEL; i++) {
-                workers.push(worker())
+                workers.push(worker());
             }
 
-            await Promise.all(workers)
+            await Promise.all(workers);
 
             if (completedChunks === totalChunks) {
-                await completeUpload()
+                await completeUpload();
             }
-
         }
 
         async function worker() {
-
             while (true) {
+                if (paused) return;
 
-                if (paused) return
+                const chunkIndex = nextChunk++;
 
-                const chunkIndex = nextChunk++
+                if (chunkIndex >= totalChunks) return;
 
-                if (chunkIndex >= totalChunks) return
+                const start = chunkIndex * CHUNK_SIZE;
+                const chunk = file.slice(start, start + CHUNK_SIZE);
 
-                const start = chunkIndex * CHUNK_SIZE
-                const chunk = file.slice(start, start + CHUNK_SIZE)
+                const hash = await hashChunk(chunk);
 
-                const hash = await hashChunk(chunk)
-
-                const success = await uploadChunk(chunk, chunkIndex, hash)
+                const success = await uploadChunk(chunk, chunkIndex, hash);
 
                 if (success) {
-
-                    completedChunks++
+                    completedChunks++;
 
                     updateProgress(
                         Math.min(completedChunks * CHUNK_SIZE, file.size),
-                        file.size
-                    )
-
+                        file.size,
+                    );
                 }
-
             }
-
         }
-
 
         /* ---------------- UPLOAD CHUNK ---------------- */
 
         async function uploadChunk(chunk, chunkIndex, hash) {
-
-            let retries = 3
+            let retries = 3;
 
             while (retries--) {
-
                 const res = await fetch("/upload/chunk", {
                     method: "PUT",
                     headers: {
                         "upload-id": uploadId,
                         "chunk-index": chunkIndex,
                         "chunk-hash": hash,
-                        "Content-Type": "application/octet-stream"
+                        "Content-Type": "application/octet-stream",
                     },
-                    body: chunk
-                })
+                    body: chunk,
+                });
 
-                if (res.ok) return true
+                if (res.ok) return true;
 
-                await new Promise(r => setTimeout(r, 1000))
-
+                await new Promise((r) => setTimeout(r, 1000));
             }
 
-            throw new Error("chunk failed")
-
+            throw new Error("chunk failed");
         }
-
 
         /* ---------------- PAUSE ---------------- */
 
         function pauseUpload() {
-            paused = true
-            document.getElementById("status").innerText = "Paused"
+            paused = true;
+            document.getElementById("status").innerText = "Paused";
         }
-
 
         /* ---------------- RESUME ---------------- */
 
         async function resumeUpload() {
+            paused = false;
 
-            paused = false
+            const status = await fetch(`/upload/status?uploadId=${uploadId}`);
+            const data = await status.json();
 
-            const status = await fetch(`/upload/status?uploadId=${uploadId}`)
-            const data = await status.json()
+            const uploadedSet = new Set(data.uploadedChunks);
 
-            const uploadedSet = new Set(data.uploadedChunks)
-
-            nextChunk = 0
+            nextChunk = 0;
 
             while (uploadedSet.has(nextChunk)) {
-                nextChunk++
+                nextChunk++;
             }
 
-            completedChunks = data.uploadedChunks.length
+            completedChunks = data.uploadedChunks.length;
 
-            startWorkers()
-
+            startWorkers();
         }
-
 
         /* ---------------- COMPLETE ---------------- */
 
         async function completeUpload() {
-
             const done = await fetch("/upload/complete", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ uploadId })
-            })
+                body: JSON.stringify({ uploadId }),
+            });
 
-            const result = await done.json()
-            if(result.error){
-                alert("ERROR : "+result.error);
+            const result = await done.json();
+            if (!result.success) {
+                alert("ERROR : " + result.message);
                 return;
             }
-            
-            localStorage.removeItem("uploadToken")
-            
-            document.getElementById("status").innerText = "Upload complete"
-            const url = `${location.origin}/file/${result.fileId}`
-            document.getElementById("link").innerHTML = `<a href="${url}" target="_blank" download>${url}</a>`
-            
-            const form = document.getElementById('uploadForm');
+
+            localStorage.removeItem("uploadToken");
+
+            document.getElementById("status").innerText = "Upload complete";
+            const url = `${location.origin}/file/${result.fileId}`;
+            document.getElementById("link").innerHTML =
+                `<a href="${url}" target="_blank" download>${url}</a>`;
+
+            const form = document.getElementById("uploadForm");
             form.reset();
         }
-
 
         /* ---------------- PROGRESS ---------------- */
 
         function updateProgress(done, total) {
+            const percent = Math.floor((done / total) * 100);
 
-            const percent = Math.floor((done / total) * 100)
+            document.getElementById("bar").style.width = percent + "%";
 
-            document.getElementById("bar").style.width = percent + "%"
-
-            document.getElementById("status").innerText = "Uploading " + percent + "%"
-
+            document.getElementById("status").innerText =
+                "Uploading " + percent + "%";
         }
-
 
         /* ---------------- DRAG DROP ---------------- */
 
-        const drop = document.getElementById("drop")
+        const drop = document.getElementById("drop");
 
-        drop.addEventListener("dragover", e => {
-            e.preventDefault()
+        drop.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            drop.classList.add("active")
+        });
+
+        drop.addEventListener("dragleave", () => {
+            drop.classList.remove("active")
         })
 
-        drop.addEventListener("drop", e => {
-            e.preventDefault()
-            file = e.dataTransfer.files[0]
-            document.getElementById("file").files = e.dataTransfer.files
-        })
-
+        drop.addEventListener("drop", (e) => {
+            e.preventDefault();
+            file = e.dataTransfer.files[0];
+            document.getElementById("file").files = e.dataTransfer.files;
+        });
     </script>
 
 </body>
