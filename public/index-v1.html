@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>File Share</title>
+
+    <style>
+        body {
+            font-family: Arial;
+            background: #0f172a;
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            width: 420px;
+            background: #1e293b;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 6px;
+            border: none;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #3b82f6;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #2563eb;
+        }
+
+        .progress {
+            margin-top: 20px;
+            height: 10px;
+            background: #334155;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .bar {
+            height: 100%;
+            width: 0%;
+            background: #22c55e;
+        }
+
+        #status {
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        .link {
+            margin-top: 15px;
+            word-break: break-all;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <h1>File Share</h1>
+
+        <input type="file" id="file">
+
+        <button onclick="upload()">Upload</button>
+
+        <div class="progress">
+            <div class="bar" id="bar"></div>
+        </div>
+
+        <div id="status"></div>
+
+        <div class="link" id="link"></div>
+
+    </div>
+
+    <script>
+
+        const CHUNK_SIZE = 5 * 1024 * 1024
+
+        async function upload() {
+
+            const file = document.getElementById("file").files[0]
+
+            if (!file) return alert("select file")
+
+            const init = await fetch("/upload/init", {
+                method: "POST",
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename: file.name,
+                    size: file.size
+                })
+            })
+
+            const { uploadId } = await init.json()
+
+            let offset = 0
+
+            while (offset < file.size) {
+
+                const chunk = file.slice(offset, offset + CHUNK_SIZE)
+
+                await fetch("/upload/chunk", {
+                    method: "PUT",
+                    headers: {
+                        "upload-id": uploadId,
+                        "chunk-offset": offset,
+                        "Content-Type": "application/octet-stream"
+                    },
+                    body: chunk
+                })
+
+                offset += chunk.size
+
+                updateProgress(offset, file.size)
+
+            }
+
+            const done = await fetch("/upload/complete", {
+                method: "POST",
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uploadId })
+            })
+
+            const result = await done.json()
+
+            document.getElementById("status").innerText = "Upload complete"
+
+            const url = `${location.origin}/file/${result.fileId}`
+
+            document.getElementById("link").innerHTML =
+                `Download link:<br><a href="${url}" target="_blank">${url}</a>`
+
+        }
+
+        function updateProgress(done, total) {
+
+            const percent = Math.floor((done / total) * 100)
+
+            document.getElementById("bar").style.width = percent + "%"
+
+            document.getElementById("status").innerText =
+                "Uploading " + percent + "%"
+
+        }
+
+    </script>
+
+</body>
+
+</html>
